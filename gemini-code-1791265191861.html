@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disaster-Resilient Logistics Prototype</title>
+    <!-- โหลด Leaflet CSS สำหรับทำแผนที่ -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background: #f4f4f9; display: flex; height: 100vh; }
+        .sidebar { width: 350px; background: #fff; padding: 20px; box-shadow: 2px 0 5px rgba(0,0,0,0.1); display: flex; flexDirection: column; justify-content: space-between; overflow-y: auto; }
+        .main-map { flex-grow: 1; height: 100%; }
+        h2 { color: #333; font-size: 1.2rem; border-bottom: 2px solid #ff4d4d; padding-bottom: 8px; }
+        .card { background: #fafafa; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        button { width: 100%; padding: 12px; font-size: 1rem; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        .btn-sos { background-color: #ff4d4d; color: white; margin-top: 10px; }
+        .btn-sos:hover { background-color: #cc0000; }
+        .btn-normal { background-color: #28a745; color: white; margin-top: 5px; }
+        .btn-normal:hover { background-color: #1e7e34; }
+        .log-box { background: #000; color: #0f0; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.85rem; height: 120px; overflow-y: auto; }
+        .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+        .status-ok { background: #d4edda; color: #155724; }
+        .status-danger { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+
+    <!-- ฝั่งควบคุม / แดชบอร์ดคนขับ (จำลอง UI บนมือถือ/คอมในหน้าจอเดียว) -->
+    <div class="sidebar">
+        <div>
+            <h2>🚚 ระบบจัดการขนส่งฉุกเฉิน</h2>
+            
+            <div class="card">
+                <h3>สถานะคนขับ (Driver Panel)</h3>
+                <p><strong>คนขับ:</strong> สมชาย ใจดี (รถบรรทุก 01)</p>
+                <p><strong>สถานะปัจจุบัน:</strong> <span id="driverStatus" class="status-badge status-ok">เดินทางปกติ</span></p>
+                <p style="font-size: 0.85rem; color: #666;" id="gpsText">พิกัด GPS: กำลังค้นหา...</p>
+                
+                <button class="btn-sos" onclick="triggerSOS()">🚨 แจ้งเหตุฉุกเฉิน / น้ำท่วม</button>
+                <button class="btn-normal" onclick="resolveSOS()">✅ เส้นทางผ่านได้ (ปกติ)</button>
+            </div>
+
+            <div class="card">
+                <h3>ศูนย์ควบคุม (Admin Log)</h3>
+                <div class="log-box" id="logBox">
+                    [System] เริ่มต้นระบบติดตามภัยพิบัติ...<br>
+                </div>
+            </div>
+        </div>
+        
+        <p style="font-size: 0.75rem; text-align: center; color: #999;">Emergency Logistics Prototype v1.0</p>
+    </div>
+
+    <!-- ฝั่งแผนที่แสดงผล (Admin Map Dashboard) -->
+    <div id="map" class="main-map"></div>
+
+    <!-- โหลด Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. ตั้งค่าแผนที่เริ่มต้น (จำลองจุดศูนย์กลางที่กรุงเทพฯ หรือพื้นที่ทดสอบ)
+        const defaultLat = 13.7563;
+        const defaultLng = 100.5018;
+        
+        const map = L.map('map').setView([defaultLat, defaultLng], 13);
+
+        // ดึงแผนที่จาก OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // สร้างหมุด (Marker) แทนตำแหน่งรถขนส่ง
+        let truckMarker = L.marker([defaultLat, defaultLng]).addTo(map)
+            .bindPopup("<b>รถขนส่ง 01: สมชาย</b><br>สถานะ: ปกติ")
+            .openPopup();
+
+        const logBox = document.getElementById('logBox');
+        const driverStatus = document.getElementById('driverStatus');
+        const gpsText = document.getElementById('gpsText');
+
+        // 2. จำลองการดึง GPS จากมือถือจริง
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(position => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                
+                // อัปเดตตำแหน่งหมุดบนแผนที่
+                truckMarker.setLatLng([lat, lng]);
+                gpsText.innerText = `พิกัด GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+            }, error => {
+                console.warn("ไม่สามารถดึง GPS จริงได้ ใช้ค่าเริ่มต้นแทน");
+            }, { enableHighAccuracy: true });
+        }
+
+        // 3. ฟังก์ชันกดปุ่ม SOS (จำลองเหตุฉุกเฉินน้ำท่วม)
+        function triggerSOS() {
+            driverStatus.className = "status-badge status-danger";
+            driverStatus.innerText = "🚨 เกิดเหตุฉุกเฉิน / น้ำท่วม!";
+            
+            // เปลี่ยนสีไอคอนหรือเพิ่ม Popup เตือน
+            truckMarker.bindPopup("<b style='color:red;'>🚨 รถขนส่ง 01 ขอความช่วยเหลือ!</b><br>พื้นที่น้ำท่วมทางขาด").openPopup();
+            
+            // บันทึก Log ฝั่งแอดมิน
+            const timeStr = new Date().toLocaleTimeString();
+            logBox.innerHTML += `[${timeStr}] <span style="color:#ff4d4d;">SOS! รถ 01 แจ้งเหตุน้ำท่วม</span><br>`;
+            logBox.scrollTop = logBox.scrollHeight;
+            
+            alert("ส่งสัญญาณขอความช่วยเหลือไปยังศูนย์ควบคุมเรียบร้อยแล้ว!");
+        }
+
+        // 4. ฟังก์ชันเคลียร์สถานะกลับเป็นปกติ
+        function resolveSOS() {
+            driverStatus.className = "status-badge status-ok";
+            driverStatus.innerText = "เดินทางปกติ";
+            
+            truckMarker.bindPopup("<b>รถขนส่ง 01: สมชาย</b><br>สถานะ: ปกติ").openPopup();
+            
+            const timeStr = new Date().toLocaleTimeString();
+            logBox.innerHTML += `[${timeStr}] <span style="color:#0f0;">รถ 01 แจ้งสถานการณ์คลี่คลาย</span><br>`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+    </script>
+</body>
+</html>
